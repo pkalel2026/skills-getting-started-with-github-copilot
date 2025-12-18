@@ -39,7 +39,11 @@ document.addEventListener("DOMContentLoaded", () => {
           participantsHTML += '<p class="no-participants">None yet</p>';
         } else {
           participantsHTML += '<ul class="participants-list">' +
-            participants.map(p => `<li class="participant-item">${escapeHTML(p)}</li>`).join('') +
+            participants.map(p => `
+              <li class="participant-item">
+                <span class="participant-email">${escapeHTML(p)}</span>
+                <button class="participant-remove" title="Remove participant" data-email="${escapeHTML(p)}" data-activity="${escapeHTML(name)}">✕</button>
+              </li>`).join('') +
             '</ul>';
         }
         participantsHTML += '</div>';
@@ -61,6 +65,9 @@ document.addEventListener("DOMContentLoaded", () => {
         option.textContent = name;
         activitySelect.appendChild(option);
       });
+      // Initialize handlers after rendering activities
+      initSignupHandlers();
+      initParticipantRemoveHandlers();
     } catch (error) {
       activitiesList.innerHTML = "<p>Failed to load activities. Please try again later.</p>";
       console.error("Error fetching activities:", error);
@@ -84,6 +91,52 @@ document.addEventListener("DOMContentLoaded", () => {
         cleaned[k] = v;
       }
     }
+
+      // Participant remove handler — attaches to each remove button
+      function initParticipantRemoveHandlers() {
+        document.querySelectorAll('.participant-remove').forEach(btn => {
+          if (btn.dataset.removeInit) return (btn.dataset.removeInit = '1');
+          btn.dataset.removeInit = '1';
+
+          btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            if (btn.dataset.processing === '1') return;
+            btn.dataset.processing = '1';
+
+            const email = btn.dataset.email;
+            const activity = btn.dataset.activity;
+
+            try {
+              const res = await fetch(`/activities/${encodeURIComponent(activity)}/participants?email=${encodeURIComponent(email)}`, {
+                method: 'DELETE'
+              });
+              const result = await res.json().catch(() => null);
+              if (!res.ok) {
+                throw new Error(result?.detail || result?.message || res?.error || res.statusText);
+              }
+
+              // Remove participant from DOM
+              const li = btn.closest('.participant-item');
+              if (li) li.remove();
+
+              // Update registered count on UI
+              const activityEl = btn.closest('.activity-card');
+              if (activityEl) {
+                let registered = Number(activityEl.dataset.registered ?? 0);
+                registered = Math.max(0, registered - 1);
+                activityEl.dataset.registered = String(registered);
+                updateActivityUI(activityEl, { capacity: Number(activityEl.dataset.capacity ?? 0), registered });
+              }
+
+            } catch (err) {
+              console.error('Failed to remove participant', err);
+              alert('Could not remove participant. Please try again.');
+            } finally {
+              btn.dataset.processing = '0';
+            }
+          });
+        });
+      }
     return cleaned;
   }
 
